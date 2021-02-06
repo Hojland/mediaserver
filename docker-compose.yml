@@ -1,0 +1,196 @@
+version: "3"
+services:
+  vpn:
+    image: bubuntux/nordvpn:v1.0
+#    dns:
+#      - 1.1.1.1 # don't think it's necessary
+#      - 8.8.8.8
+#    network_mode: bridge # THIS SHOULDNT BE THERE. THEN I CANT DNS ROUTE???
+    cap_add:
+      - NET_ADMIN               # Required
+      - SYS_MODULE              # Required for TECHNOLOGY=NordLynx
+    sysctls:
+      - net.ipv4.conf.all.rp_filter=2
+    devices:
+      - /dev/net/tun            # Required
+    environment:                # Review https://github.com/bubuntux/nordvpn#environment-variables
+#      - USER=${NORDVPN_USER}     # Required
+#      - PASS=${NORDVPN_PSW}
+#      - CONNECT=Sweden
+#      - CONNECT=United_States
+#      - TECHNOLOGY=NordLynx
+      - TECHNOLOGY=OpenVPN
+      - CYBER_SEC=Enable
+      - NETWORK=192.168.1.0/24
+      - TZ=Europe/Copenhagen
+      - DEBUG=on
+    env_file:
+      - .env
+    ports:
+      - "7503:7503" # qbittorrent webui
+      - "8112:8112" # deluge webui
+#    extra_hosts:  #not necessary know, but might be a fix sometime
+#      - "w569ut7zbkiqf5b.xyz:104.28.28.105"
+#      - "zwyr157wwiu6eior.com:104.17.188.107"
+#      - "boi9osyg1uwtyafn.com:104.16.229.42"
+
+  qbittorrent:
+    image: linuxserver/qbittorrent
+    network_mode: service:vpn
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Copenhagen
+      - UMASK_SET=022
+      - WEBUI_PORT=7503
+    volumes:
+      - /mnt/storage/config/torrent:/config
+      - /mnt/storage/downloads:/downloads
+    restart: unless-stopped
+    depends_on:
+      - vpn
+#    labels: # maybe move to vpn
+#      - traefik.enable=true
+#      - traefik.http.routers.qb.rule=Host(`qbittorrent.${DOMAIN}`)
+#      - traefik.http.routers.qb.entrypoints=websecure
+#      - traefik.http.routers.qb.tls.certresolver=myresolver
+#      - traefik.http.services.qb.loadbalancer.server.port=7503
+#      - traefik.http.services.qb.loadbalancer.passhostheader=false
+
+  deluge:
+    image: linuxserver/deluge
+    container_name: deluge
+    network_mode: service:vpn
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Copenhagen
+      - UMASK_SET=022 #optional
+      - DELUGE_LOGLEVEL=debug #optional
+    volumes:
+      - /mnt/storage/config/torrent:/config
+      - /mnt/storage/downloads:/downloads
+    restart: unless-stopped
+    depends_on:
+      - vpn
+
+  nzbget:
+    container_name: nzbget
+    image: linuxserver/nzbget:latest
+    restart: unless-stopped
+    network_mode: service:vpn
+    environment:
+      - PUID=1000 # default user id, defined in .env
+      - PGID=1000 # default group id, defined in .env
+      - TZ=Europe/Copenhagen # timezone, defined in .env
+    volumes:
+      - /mnt/storage/downloads:/downloads # download folder
+      - /mnt/storage/config/nzbget:/config # config files
+        
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+#    network_mode: host
+    depends_on:                                                                              
+      - qbittorrent 
+    ports:
+      - "7878:7878"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Copenhagen
+    volumes:
+      - /mnt/storage/config/radarr:/config
+      - /mnt/storage/downloads:/downloads
+      - /mnt/storage/media/Movies:/movies
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN}`)
+      - traefik.http.routers.radarr.entrypoints=websecure
+      - traefik.http.routers.radarr.tls.certresolver=myresolver
+  
+  jackett:
+    image: linuxserver/jackett
+    container_name: jackett
+    environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Copenhagen
+        - AUTO_UPDATE=true #optional
+      #  - RUN_OPTS=#optional
+    ports:
+      - 9117:9117
+    volumes:
+        - /mnt/storage/config/jackett:/config
+        - /mnt/storage/downloads:/downloads
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.jackett.rule=Host(`jackett.${DOMAIN}`)
+      - traefik.http.routers.jackett.entrypoints=websecure
+      - traefik.http.routers.jackett.tls.certresolver=myresolver
+
+  bazarr:
+    container_name: bazarr
+    image: linuxserver/bazarr
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - PUID=1000 # default user id, defined in .env
+      - PGID=1000 # default group id, defined in .env
+      - TZ=Europe/Copenhagen # timezone, defined in .env
+      - UMASK_SET=022 #optional
+    volumes:
+      - /mnt/storage/config/bazarr:/config # config files
+      - /mnt/storage/media/Movies:/movies # movies folder
+      - /mnt/storage/media/TV Shows:/tv # tv shows folder
+    ports:
+      - 6767:6767
+
+  traefik:
+    image: traefik:v2.1
+    container_name: traefik
+    network_mode: host
+    ports:
+      - 80:8000
+      - 443:8443
+    volumes:
+      - /home/pi/mediaserver/traefik/traefik.toml:/etc/traefik/traefik.toml
+      # Create acme.json before launching
+      # touch acme.json && chmod 600 acme.json
+      - /home/pi/mediaserver/traefik/letsencrypt/acme.json:/acme.json:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.api.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.api.service=api@internal
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.routers.api.tls.certresolver=myresolver
+
+  plex:
+    container_name: plex
+    image: linuxserver/plex:arm32v7-latest
+    restart: unless-stopped
+    network_mode: host
+    ports:
+      - 32400:32400
+      - 3005:3005/tcp
+      - 8324:8324/tcp
+      - 32469:32469/tcp
+      - 1900:1900/udp
+      - 32410:32410/udp
+      - 32412:32412/udp
+      - 32413:32413/udp
+      - 32414:32414/udp
+    environment:
+      - TZ=Europe/Copenhagen
+      - VERSION=docker
+      #- PLEX_CLAIM=claim-Rn7tV5n6TGykAH8ASii7
+      #- ADVERTISE_IP=http://192.168.0.10:32400/
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - /mnt/storage/config:/config
+      - /mnt/storage/transcode:/transcode
+      - /mnt/storage/media/TV Shows:/data/TV Shows
+      - /mnt/storage/media/Movies:/data/Movies
