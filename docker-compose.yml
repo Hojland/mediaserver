@@ -1,7 +1,7 @@
-version: "3"
 services:
   vpn:
-    image: bubuntux/nordvpn:v1.0
+    image: bubuntux/nordlynx:latest # bubuntux/nordbpn:latest to get key
+    container_name: vpn
 #    dns:
 #      - 1.1.1.1 # don't think it's necessary
 #      - 8.8.8.8
@@ -16,28 +16,23 @@ services:
     devices:
       - /dev/net/tun            # Required
     environment:                # Review https://github.com/bubuntux/nordvpn#environment-variables
-#      - USER=${NORDVPN_USER}     # Required
-#      - PASS=${NORDVPN_PSW}
-#      - CONNECT=Sweden
-#      - CONNECT=United_States
-#      - TECHNOLOGY=NordLynx
-      - TECHNOLOGY=OpenVPN
-      - CYBER_SEC=Enable
-      - NETWORK=192.168.1.0/24
-      - TZ=Europe/Copenhagen
-      - DEBUG=on
+      - PRIVATE_KEY=${PRIVATE_KEY}
+     # to get  key
+     #  - TOKEN=${NORDVPN_TOKEN}
+     #  - CONNECT=Sweden
+     #  - TECHNOLOGY=NordLynx
+     #  - CYBER_SEC=Enable
+     #  - NETWORK=192.168.1.0/24
+     #  - TZ=Europe/Copenhagen
+     #  - DEBUG=on
     env_file:
       - .env
     ports:
       - "7503:7503" # qbittorrent webui
-      - "8112:8112" # deluge webui
-#    extra_hosts:  #not necessary now, but might be a fix sometime
-#      - "w569ut7zbkiqf5b.xyz:104.28.28.105"
-#      - "zwyr157wwiu6eior.com:104.17.188.107"
-#      - "boi9osyg1uwtyafn.com:104.16.229.42"
 
   qbittorrent:
     image: linuxserver/qbittorrent
+    container_name: qbittorrent
     network_mode: service:vpn
     environment:
       - PUID=1000
@@ -52,54 +47,15 @@ services:
     depends_on:
       - vpn
     labels:
-      # qbittorrent
       - traefik.enable=true
       - traefik.http.routers.qb.rule=Host(`qbittorrent.${DOMAINNAME}`)
       - traefik.frontend.rule=Host:qbittorrent.${DOMAINNAME}
       - traefik.http.routers.qb.entrypoints=web
       - traefik.http.services.qb.loadbalancer.server.port=7503
-
-  deluge:
-    image: linuxserver/deluge
-    container_name: deluge
-    network_mode: service:vpn
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Copenhagen
-      - UMASK_SET=022 #optional
-      - DELUGE_LOGLEVEL=debug #optional
-    volumes:
-      - /mnt/storage/config/torrent:/config
-      - /mnt/storage/downloads:/downloads
-    restart: unless-stopped
-    depends_on:
-      - vpn
-    labels:
-      # deluge
-      - traefik.enable=true
-      - traefik.http.routers.deluge.rule=Host(`deluge.${DOMAINNAME}`)
-      - traefik.frontend.rule=Host:deluge.${DOMAINNAME}
-      - traefik.http.routers.deluge.entrypoints=web
-      - traefik.http.services.deluge.loadbalancer.server.port=8112
-
-  nzbget:
-    container_name: nzbget
-    image: linuxserver/nzbget:latest
-    restart: unless-stopped
-    network_mode: service:vpn
-    environment:
-      - PUID=1000 # default user id, defined in .env
-      - PGID=1000 # default group id, defined in .env
-      - TZ=Europe/Copenhagen # timezone, defined in .env
-    volumes:
-      - /mnt/storage/downloads:/downloads # download folder
-      - /mnt/storage/config/nzbget:/config # config files
         
   radarr:
     image: linuxserver/radarr:latest
     container_name: radarr
-#    network_mode: host
     networks:
       - discovery
     depends_on:                                                                              
@@ -118,15 +74,12 @@ services:
       - traefik.enable=true
       - traefik.http.routers.radarr.rule=Host(`radarr.${DOMAINNAME}`)
       - traefik.frontend.rule=Host:radarr.${DOMAINNAME}
-#      - traefik.http.routers.radarr.entrypoints=websecure
-#      - traefik.http.routers.radarr.tls.certresolver=myresolver
 
   sonarr:
     image: linuxserver/sonarr:latest
     container_name: sonarr
     networks:
       - discovery
-#    network_mode: host
     depends_on:                                                                              
       - qbittorrent 
     ports:
@@ -143,9 +96,7 @@ services:
       - traefik.enable=true
       - traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAINNAME}`)
       - traefik.frontend.rule=Host:sonarr.${DOMAINNAME}
-#      - traefik.http.routers.sonarr.entrypoints=websecure
-#      - traefik.http.routers.sonarr.tls.certresolver=myresolver
-  
+
   jackett:
     image: linuxserver/jackett
     container_name: jackett
@@ -167,39 +118,11 @@ services:
       - traefik.enable=true
       - traefik.http.routers.jackett.rule=Host(`jackett.${DOMAINNAME}`)
       - traefik.frontend.rule=Host:jackett.${DOMAINNAME}
-#      - traefik.http.routers.jackett.entrypoints=websecure
-#      - traefik.http.routers.jackett.tls.certresolver=myresolver
-
-  bazarr:
-    container_name: bazarr
-    image: linuxserver/bazarr
-    restart: unless-stopped
-    networks:
-      - discovery
-    #network_mode: host
-    environment:
-      - PUID=1000 # default user id, defined in .env
-      - PGID=1000 # default group id, defined in .env
-      - TZ=Europe/Copenhagen # timezone, defined in .env
-      - UMASK_SET=022 #optional
-    volumes:
-      - /mnt/storage/config/bazarr:/config # config files
-      - /mnt/storage/media/Movies:/movies # movies folder
-      - /mnt/storage/media/TV Shows:/tv # tv shows folder
-    ports:
-      - 6767:6767
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAINNAME}`)
-      - traefik.frontend.rule=Host:bazarr.${DOMAINNAME}
 
   plex:
     container_name: plex
-    image: linuxserver/plex:bionic #arm32v7-latest
+    image: lscr.io/linuxserver/plex:latest
     restart: unless-stopped
-    #networks:
-    #  - discovery
-    network_mode: host
     ports:
       - 32400:32400
       - 3005:3005/tcp
@@ -213,9 +136,7 @@ services:
     environment:
       - TZ=Europe/Copenhagen
       - VERSION=docker
-      #- PLEX_CLAIM=claim-qPMWZ7JE5wHd63zwaX94
       - ADVERTISE_IP=http://plex.${DOMAINNAME}/
-      #- ADVERTISE_IP=http://raspberrypi.local:32400
       - PUID=1000
       - PGID=1000
     volumes:
