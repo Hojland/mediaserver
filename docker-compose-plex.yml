@@ -117,28 +117,39 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.jackett.rule=Host(`jackett.${DOMAINNAME}`)
-      - traefik.frontend.rule=Host:jackett.${DOMAINNAME}x
+      - traefik.frontend.rule=Host:jackett.${DOMAINNAME}
 
-  jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
-    container_name: jellyfin
+  plex:
+    container_name: plex
+    image: lscr.io/linuxserver/plex:latest
+    restart: unless-stopped
+    ports:
+      - 32400:32400
+      - 3005:3005/tcp
+      - 8324:8324/tcp
+      - 32469:32469/tcp
+      - 1900:1900/udp
+      - 32410:32410/udp
+      - 32412:32412/udp
+      - 32413:32413/udp
+      - 32414:32414/udp
     environment:
+      - TZ=Europe/Copenhagen
+      - VERSION=docker
+      - ADVERTISE_IP=http://plex.${DOMAINNAME}/
       - PUID=1000
       - PGID=1000
-      - TZ=Etc/UTC
-      - JELLYFIN_PublishedServerUrl=http://jellyfin.${DOMAINNAME}/ #optional
+      - PLEX_CLAIM=${PLEX_CLAIM}
     volumes:
-      - ~/mediaserver/config/jellyfin:/config
-      - /mnt/storage/media/TV Shows:/data/tvshows
-      - /mnt/storage/media/Movies:/data/movies
-    ports:
-      - 8096:8096
-    restart: unless-stopped
+      - /mnt/storage/config/plex:/config
+      - /mnt/storage/transcode:/transcode
+      - /mnt/storage/media/TV Shows:/data/TVShows
+      - /mnt/storage/media/Movies:/data/Movies
     labels:
       - traefik.enable=true
-      - traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAINNAME}`)
-      - traefik.frontend.rule=Host:jellyfin.${DOMAINNAME}
-      - traefik.http.services.jellyfin.loadbalancer.server.port=8096
+      - traefik.http.routers.plex.rule=Host(`plex.${DOMAINNAME}`)
+      - traefik.frontend.rule=Host:plex.${DOMAINNAME}
+      - traefik.http.services.plex.loadbalancer.server.port=32400
 
 networks:
   # Discovery is manually created to avoid forcing any order of docker-compose stack creation (`docker network create discovery`)
